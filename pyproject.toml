@@ -1,0 +1,30 @@
+[project]
+name = "otohiroi-mcp"
+dynamic = ["version"]
+description = "Free sound effects and BGM for AI agents: search openly licensed audio, audition it by ear, and pull it into your game with the license on record."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+keywords = ["mcp", "model-context-protocol", "sound-effects", "bgm", "cc0", "game-audio", "gamedev", "openverse", "freesound"]
+dependencies = ["mcp>=2.3,<3"]
+
+[project.scripts]
+otohiroi = "otohiroi.server:main"
+otohiroi-mcp = "otohiroi.server:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "anyio>=4"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/otohiroi/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/otohiroi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

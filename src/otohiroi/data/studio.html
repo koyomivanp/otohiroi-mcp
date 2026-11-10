@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Otohiroi Studio</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f5f1;--card:#fff;--text:#1d1c1a;--dim:#6d6a64;--line:#dedbd3;--btn:#ece9e1;--accent:#c8571b;--on:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#191816;--card:#24221f;--text:#f1eee8;--dim:#a7a297;--line:#3a3732;--btn:#34312c;--accent:#e9793a}}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 system-ui,"Yu Gothic UI",sans-serif}
+main{max-width:800px;margin:0 auto;padding:20px 16px 110px}h1{font-size:21px;margin:0}p{margin:0}.dim{color:var(--dim);font-size:14px;overflow-wrap:anywhere}
+.top{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+button{font:inherit;padding:7px 12px;border:0;border-radius:7px;background:var(--btn);color:var(--text);cursor:pointer}button:disabled{opacity:.45;cursor:default}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}.card.off{opacity:.55}
+.head{display:flex;align-items:center;gap:10px}.head input{width:20px;height:20px;flex:none}.head b{font-size:16px}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-top:10px}
+.opt{display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 9px;cursor:pointer}.opt.sel{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.opt span{overflow-wrap:anywhere;font-size:14px}.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}.tools label{display:flex;gap:6px;align-items:center;font-size:14px;color:var(--dim)}input[type=range]{width:120px}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 16px}.bar div{max-width:800px;margin:0 auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#apply{background:var(--accent);color:var(--on);font-weight:600;padding:9px 18px}#msg{flex:1;min-width:180px;font-size:14px}
+</style></head><body><main>
+<h1>Otohiroi Studio</h1><p class="dim" id="root"></p>
+<p class="dim" style="margin-top:6px">チェックした音だけ、選んだ案に置き換えます。案を押すとその場で鳴ります。</p>
+<div class="top"><button id="all">全部チェック</button><button id="none">全部外す</button></div>
+<div id="list"></div>
+</main><div class="bar"><div><button id="apply">ゲームに反映</button><button id="undo">元に戻す</button><span id="msg"></span></div></div>
+<script type="module">
+import { play, catalog } from "./recipes.js";
+const $ = (id) => document.getElementById(id), state = await (await fetch("./state")).json(), families = catalog();
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+let current = null, ac = null, unlocked = false;
+if (state.has_current) { try { current = await import("./current.js"); } catch (error) { console.error(error); } }
+function audio() { if (!ac) ac = new AudioContext(); if (ac.state === "suspended") ac.resume(); return ac; }
+function nowCallable(event) { if (!current) return null; const holder = event.owner ? current[event.owner] : current; const fn = holder && holder[event.name]; return typeof fn === "function" ? fn.bind(holder) : null; }
+function playNow(event, index) {
+  if (!unlocked) { for (const [name, value] of Object.entries(current)) if (typeof value === "function" && /unlock|resume|initaudio/i.test(name)) value(); unlocked = true; }
+  // Games often count from 1 (the first note, the first star), and 1 is also valid for ones that count from 0.
+  nowCallable(event)(...event.args.map((a) => (a === "__index__" ? index + 1 : a)));
+}
+const defaults = (event, index) => Object.fromEntries(event.params.map((p, i) => [p, event.args[i] === "__index__" ? index : event.args[i]]));
+const rows = [];
+function refresh() { const on = rows.filter((r) => r.box.checked).length; $("apply").textContent = `${on}個をゲームに反映`; for (const r of rows) r.card.classList.toggle("off", !r.box.checked); }
+for (const event of state.events) {
+  const card = el("div", "card"), head = el("label", "head"), box = el("input"); box.type = "checkbox";
+  const saved = state.choices[event.name], row = { event, card, box, variant: saved ? saved.variant : "A", level: saved ? saved.level : 1 };
+  box.checked = saved ? true : !state.applied;
+  const title = el("div"); title.append(el("b", "", event.name)); if (event.label) title.append(" ", el("span", "dim", event.label));
+  head.append(box, title); card.append(head);
+  card.append(el("p", "dim", `${event.comment ? event.comment + " / " : ""}${event.call_count}か所で使用 / ${event.defined_at}`));
+  const opts = el("div", "opts"), set = families[event.family], cards = [];
+  const preview = (index) => play(event.family, row.variant, defaults(event, index), row.level, audio());
+  for (const [key, text] of Object.entries(set)) {
+    const opt = el("div", "opt"); opt.tabIndex = 0; opt.setAttribute("role", "button"); opt.append(el("b", "", key), el("span", "", text));
+    const pick = () => { row.variant = key; for (const c of cards) c.classList.toggle("sel", c === opt); preview(0); };
+    opt.onclick = pick; opt.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };
+    if (key === row.variant) opt.classList.add("sel");
+    cards.push(opt); opts.append(opt);
+  }
+  card.append(opts);
+  const tools = el("div", "tools"), now = el("button", "", "今の音"), burst = el("button", "", event.indexed ? "順番に鳴らす" : "連打で聴く");
+  now.disabled = !nowCallable(event); now.title = now.disabled ? "この音は試聴用に読み込めませんでした" : "";
+  now.onclick = () => playNow(event, 0);
+  burst.onclick = () => { for (let i = 0; i < (event.indexed ? 5 : 8); i++) setTimeout(() => preview(i), i * (event.indexed ? 260 : 130)); };
+  const vol = el("label", "", "音量"), range = el("input"); range.type = "range"; range.min = 0; range.max = 2; range.step = 0.05; range.value = row.level;
+  range.oninput = () => { row.level = Number(range.value); }; range.onchange = () => preview(0); vol.append(range);
+  tools.append(now, burst, vol); card.append(tools);
+  box.onchange = refresh; rows.push(row); $("list").append(card);
+}
+$("root").textContent = state.root.split(/[\\/]/).filter(Boolean).pop();  // the full path can show a user name
+if (state.skipped.length) { const p = el("p", "dim", `案がまだない音（AIに相談してください）：${state.skipped.join("、")}`); p.style.marginBottom = "10px"; $("list").append(p); }
+$("all").onclick = () => { for (const r of rows) r.box.checked = true; refresh(); };
+$("none").onclick = () => { for (const r of rows) r.box.checked = false; refresh(); };
+async function send(path, body) {
+  $("apply").disabled = $("undo").disabled = true;
+  $("msg").textContent = "処理しています…";
+  try {
+    const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await res.json();
+    $("msg").textContent = res.ok ? data.message : `できませんでした：${data.error}`;
+  } catch (error) {
+    $("msg").textContent = `できませんでした：${error}`;
+  }
+  $("apply").disabled = $("undo").disabled = false;
+}
+$("apply").onclick = () => send("./apply", { choices: Object.fromEntries(rows.filter((r) => r.box.checked).map((r) => [r.event.name, { variant: r.variant, level: r.level }])) });
+$("undo").onclick = () => send("./undo", {});
+refresh();
+</script></body></html>
